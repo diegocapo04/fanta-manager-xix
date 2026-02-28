@@ -1,0 +1,91 @@
+import streamlit as st
+from utils import get_current_season_from_db, require_login, run_query, is_admin
+
+# --- 1. CONFIGURAZIONE PAGINA ---
+st.set_page_config(
+    page_title="FantaManager XIX",
+    page_icon="⚽",
+    layout="centered",
+    initial_sidebar_state="expanded"
+)
+
+# --- 2. TITOLO E INTRODUZIONE ---
+st.title("⚽ FantaManager XIX")
+st.markdown("### Il gestionale per il tuo Fantacalcio Manageriale")
+
+# --- 3. GESTIONE LOGIN ---
+require_login()
+
+# Utente loggato
+user = st.session_state.get("user", "Utente")
+role = st.session_state.get("role", "user")
+
+st.success(f"👋 Benvenuto, **{user}**! (Ruolo: {role.upper()})")
+
+# --- 4. CARICAMENTO DATI GLOBALI ---
+with st.spinner("🔄 Caricamento dati..."):
+    
+    # A. Test Connessione DB
+    try:
+        if run_query("SELECT 1"):
+            db_status = "✅ Online"
+        else:
+            db_status = "⚠️ Errore Query"
+    except Exception as e:
+        db_status = "❌ Offline"
+
+    # B. Recupero Stagione (PERSISTENTE DAL DB)
+    current_season = get_current_season_from_db()
+    st.session_state["current_season"] = current_season
+
+# --- 5. DASHBOARD RIEPILOGATIVA ---
+st.divider()
+st.subheader(f"📊 Situazione Stagione {current_season}")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric(label="Stato Database", value=db_status)
+
+with col2:
+    # Conteggio Squadre
+    n_squadre = 0
+    try:
+        res_sq = run_query("SELECT COUNT(*) FROM fantasquadre")
+        if res_sq: n_squadre = res_sq[0][0]
+    except: pass
+    st.metric(label="Squadre Iscritte", value=n_squadre)
+
+with col3:
+    # Conteggio Giocatori Totali
+    n_gioc = 0
+    try:
+        res_g = run_query("SELECT COUNT(*) FROM giocatori")
+        if res_g: n_gioc = res_g[0][0]
+    except: pass
+    st.metric(label="Giocatori in DB", value=n_gioc)
+
+# --- 6. MENU DI NAVIGAZIONE RAPIDA ---
+st.divider()
+st.subheader("🚀 Accesso Rapido")
+
+col_nav1, col_nav2 = st.columns(2)
+
+with col_nav1:
+    st.info("**Area Utente**")
+    st.markdown("""
+    - 📋 **[Rose](Rose)**: Visualizza le rose complete
+    - ℹ️ **[Info Squadra](Info_Squadra)**: Dettagli club, stadi e finanze
+    - 💰 **[Osservatorio Mercato](Osservatorio_Mercato)**: Storico movimenti
+    - 📈 **[Statistiche & Classifica](Classifica)**: Andamento campionato
+    """)
+
+if is_admin():
+    with col_nav2:
+        st.error("**Area Amministrazione**")
+        st.markdown("""
+        - ⚖️ **[Gestione Mercato](Mercato)**: Compravendita e Rinnovi
+        - ⚽ **[Gestione Gare](Admin_Gare)**: Inserimento risultati e calendario
+        - 🏟️ **[Admin Squadre](Admin_Squadre)**: Modifica Stadi e Budget
+        - 🏁 **[Fine Stagione](Fine_Stagione)**: Chiusura anno
+        """)

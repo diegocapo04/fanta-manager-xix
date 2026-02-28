@@ -1,0 +1,48 @@
+﻿services:
+  # Servizio Database
+  db:
+    image: mysql:8.0
+    container_name: fanta_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fanta_net
+
+  # Servizio Web App (Streamlit)
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: fanta_web
+    restart: always
+    ports:
+      - "8501:8501"
+    environment:
+      - DB_HOST=db
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - fanta_net
+
+volumes:
+  mysql_data:
+
+networks:
+  fanta_net:
+    driver: bridge
