@@ -88,7 +88,9 @@ def get_db_engine():
         port = db_conf.get("port", 4000)
         db_name = db_conf["name"]
         ssl_mode = db_conf.get("ssl", True)
-    except (KeyError, FileNotFoundError):
+        logger.info(f"Connessione via Streamlit Secrets a {host}:{port}")
+    except (KeyError, FileNotFoundError) as e:
+        logger.warning(f"Secrets non trovati ({e}), uso variabili d'ambiente")
         user = os.getenv("DB_USER", "root")
         password = os.getenv("DB_PASSWORD", "root")
         host = os.getenv("DB_HOST", "db")
@@ -97,8 +99,12 @@ def get_db_engine():
         ssl_mode = False
 
     url = f"mysql+pymysql://{user}:{quote_plus(password)}@{host}:{port}/{db_name}"
+
+    connect_args = {}
     if ssl_mode:
-        url += "?ssl_verify_cert=true&ssl_verify_identity=true"
+        import ssl as ssl_module
+        ssl_ctx = ssl_module.create_default_context()
+        connect_args["ssl"] = ssl_ctx
 
     return create_engine(
         url,
@@ -106,7 +112,8 @@ def get_db_engine():
         pool_size=2,
         max_overflow=3,
         pool_pre_ping=True,
-        pool_recycle=300
+        pool_recycle=300,
+        connect_args=connect_args
     )
 
 def run_query(query_str, params=None):
