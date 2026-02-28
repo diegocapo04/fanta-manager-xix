@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # Manteniamo SQLite per gli utenti per separare le credenziali di accesso
 # dai dati di gioco (MySQL). È una pratica sicura per app di queste dimensioni.
 
-USERS_DB = "users.db"
+USERS_DB = "/app/data/users.db"
 
 def init_users_db():
     """Inizializza il DB locale per gli utenti se non esiste."""

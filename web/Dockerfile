@@ -11,7 +11,11 @@ WORKDIR /app
 # Installa dipendenze di sistema necessarie per compilare alcune lib Python
 RUN apt-get update && apt-get install -y \
     build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Directory per dati persistenti (users.db)
+RUN mkdir -p /app/data
 
 # Copia prima i requirements per sfruttare la cache di Docker
 COPY requirements.txt .
