@@ -2,8 +2,8 @@
 import os
 import logging
 import hashlib
-import sqlite3
 import pandas as pd
+from urllib.parse import quote_plus
 from datetime import datetime, timedelta
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import QueuePool
@@ -13,54 +13,22 @@ from sqlalchemy.exc import SQLAlchemyError
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ==== 1. GESTIONE UTENTI (LOGIN LOCALE) =======================================
-# Manteniamo SQLite per gli utenti per separare le credenziali di accesso
-# dai dati di gioco (MySQL). È una pratica sicura per app di queste dimensioni.
-
-USERS_DB = "/app/data/users.db"
-
-def init_users_db():
-    """Inizializza il DB locale per gli utenti se non esiste."""
-    conn = sqlite3.connect(USERS_DB)
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            username TEXT PRIMARY KEY,
-            password_hash TEXT,
-            role TEXT,
-            last_login TIMESTAMP
-        )
-    """)
-    
-    # Creazione utente Admin (Password default: admin123) - DA CAMBIARE
-    admin_hash = hashlib.sha256("FantaManager2026+".encode()).hexdigest()
-    c.execute("INSERT OR IGNORE INTO users VALUES (?, ?, 'admin', ?)", 
-              ("admin", admin_hash, datetime.now()))
-    
-    # Creazione utente User (Password default: user123)
-    user_hash = hashlib.sha256("FantaManagerXIX".encode()).hexdigest()
-    c.execute("INSERT OR IGNORE INTO users VALUES (?, ?, 'user', ?)", 
-              ("utente", user_hash, datetime.now()))
-    
-    conn.commit()
-    conn.close()
+# ==== 1. GESTIONE UTENTI (su MySQL/TiDB) =====================================
 
 def authenticate(username, password):
-    """Verifica credenziali e ritorna il ruolo."""
-    init_users_db()
-    conn = sqlite3.connect(USERS_DB)
-    c = conn.cursor()
-    
+    """Verifica credenziali contro la tabella users su MySQL/TiDB."""
     pwd_hash = hashlib.sha256(password.encode()).hexdigest()
-    c.execute("SELECT role FROM users WHERE username=? AND password_hash=?", (username, pwd_hash))
-    result = c.fetchone()
-    
+    result = run_query(
+        "SELECT role FROM users WHERE username = :user AND password_hash = :pwd",
+        {"user": username, "pwd": pwd_hash}
+    )
     if result:
-        c.execute("UPDATE users SET last_login=? WHERE username=?", (datetime.now(), username))
-        conn.commit()
-    
-    conn.close()
-    return result[0] if result else None
+        run_query(
+            "UPDATE users SET last_login = :now WHERE username = :user",
+            {"now": datetime.now(), "user": username}
+        )
+        return result[0][0]
+    return None
 
 # ==== 2. GESTIONE SESSIONE STREAMLIT ==========================================
 
@@ -108,22 +76,37 @@ def is_admin():
 @st.cache_resource
 def get_db_engine():
     """
-    Crea il pool di connessione a MySQL. 
-    Usa cache_resource per non ricreare la connessione a ogni ricaricamento pagina.
+    Crea il pool di connessione a MySQL/TiDB.
+    Legge le credenziali da st.secrets (Streamlit Cloud)
+    con fallback a os.getenv (sviluppo locale con Docker).
     """
-    user = os.getenv("DB_USER", "root")
-    password = os.getenv("DB_PASSWORD", "root") # Default da docker-compose
-    host = os.getenv("DB_HOST", "db")
-    db_name = os.getenv("DB_NAME", "fantamanagerxix")
-    
-    url = f"mysql+pymysql://{user}:{password}@{host}:3306/{db_name}"
-    
+    try:
+        db_conf = st.secrets["database"]
+        user = db_conf["user"]
+        password = db_conf["password"]
+        host = db_conf["host"]
+        port = db_conf.get("port", 4000)
+        db_name = db_conf["name"]
+        ssl_mode = db_conf.get("ssl", True)
+    except (KeyError, FileNotFoundError):
+        user = os.getenv("DB_USER", "root")
+        password = os.getenv("DB_PASSWORD", "root")
+        host = os.getenv("DB_HOST", "db")
+        port = int(os.getenv("DB_PORT", "3306"))
+        db_name = os.getenv("DB_NAME", "fantamanagerxix")
+        ssl_mode = False
+
+    url = f"mysql+pymysql://{user}:{quote_plus(password)}@{host}:{port}/{db_name}"
+    if ssl_mode:
+        url += "?ssl_verify_cert=true&ssl_verify_identity=true"
+
     return create_engine(
         url,
         poolclass=QueuePool,
-        pool_size=5,
-        max_overflow=10,
-        pool_pre_ping=True # Fondamentale: controlla se la connessione è viva prima di usarla
+        pool_size=2,
+        max_overflow=3,
+        pool_pre_ping=True,
+        pool_recycle=300
     )
 
 def run_query(query_str, params=None):
@@ -222,4 +205,4 @@ def get_current_season_from_db():
 
 def update_season_in_db(new_season):
     """Aggiorna la stagione nel database (usato a fine anno)."""
-    run_transaction_batch("UPDATE configurazione SET Valore = :s WHERE Chiave = 'stagione_corrente'", {"s": new_season})
+    run_query("UPDATE configurazione SET Valore = :s WHERE Chiave = 'stagione_corrente'", {"s": new_season})
