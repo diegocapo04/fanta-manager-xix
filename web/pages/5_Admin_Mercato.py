@@ -114,7 +114,7 @@ with t_anag:
             nome    = c1.text_input("Nome")
             cognome = c2.text_input("Cognome *")
             ruolo   = c1.selectbox("Ruolo", ["P", "D", "C", "A"])
-            valore  = c2.number_input("Valore di Mercato (FM)", min_value=1.0, step=0.5, value=10.0)
+            valore  = c2.number_input("Valore di Mercato (FM)", min_value=0.01, step=0.5, value=10.0)
 
             if st.form_submit_button("💾 Crea Giocatore", type="primary"):
                 if cognome.strip():
@@ -145,7 +145,7 @@ with t_anag:
                 new_c = c2.text_input("Cognome", data_p["c"])
                 new_r = c1.selectbox("Ruolo", ["P","D","C","A"],
                                      index=["P","D","C","A"].index(data_p["r"]))
-                new_v = c2.number_input("Valore Mercato (FM)", min_value=1.0,
+                new_v = c2.number_input("Valore Mercato (FM)", min_value=0.01,
                                         step=0.5, value=data_p["v"])
 
                 cs, cd = st.columns(2)
