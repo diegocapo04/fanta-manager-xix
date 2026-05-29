@@ -16,8 +16,8 @@ st.title("🛠️ Fix Premi Coppe")
 st.caption(f"Stagione corrente: {current_season}")
 
 st.warning(
-    "Questa pagina serve solo per correggere rapidamente le fasi premio delle coppe. "
-    "Usala una volta, verifica il risultato, poi eliminala."
+    "Pagina temporanea per correggere rapidamente i premi delle coppe. "
+    "Dopo l'uso puoi eliminarla."
 )
 
 comps = run_query(
@@ -58,35 +58,54 @@ if current_prizes:
 else:
     st.info("Nessun premio configurato per questa competizione.")
 
-st.divider()
-st.subheader("Nuova configurazione")
+default_by_fase = {r[0]: float(r[1]) for r in current_prizes}
 
-st.markdown(
-    "Imposta le tre fasi reali della coppa nel tuo formato:\n"
-    "- Gironi\n"
-    "- Semifinale\n"
-    "- Finale"
+st.divider()
+st.subheader("Nuova configurazione premi")
+
+premio_gironi = st.number_input(
+    "Premio Gironi (Ordine 1)",
+    min_value=0.0,
+    value=float(default_by_fase.get("Gironi", 0.0)),
+    step=0.5
 )
 
-default_map = {int(r[2]): float(r[1]) for r in current_prizes} if current_prizes else {}
+premio_semifinale = st.number_input(
+    "Premio Semifinale (Ordine 2)",
+    min_value=0.0,
+    value=float(default_by_fase.get("Semifinale", default_by_fase.get("Semifinali", 0.0))),
+    step=0.5
+)
 
-premio_gironi = st.number_input("Premio Gironi (Ordine 1)", min_value=0.0, value=float(default_map.get(1, 0.0)), step=0.5)
-premio_semifinale = st.number_input("Premio Semifinale (Ordine 2)", min_value=0.0, value=float(default_map.get(2, 0.0)), step=0.5)
-premio_finale = st.number_input("Premio Finale (Ordine 3)", min_value=0.0, value=float(default_map.get(3, 0.0)), step=0.5)
+premio_finale = st.number_input(
+    "Premio Finale (Ordine 3)",
+    min_value=0.0,
+    value=float(default_by_fase.get("Finale", 0.0)),
+    step=0.5
+)
+
+premio_vittoria = st.number_input(
+    "Premio Vittoria (Ordine 4)",
+    min_value=0.0,
+    value=float(default_by_fase.get("Vittoria", 0.0)),
+    step=0.5
+)
+
+st.markdown("### Anteprima cumulativa")
+st.write(f"- Eliminato ai Gironi → **{premio_gironi:.2f} FM**")
+st.write(f"- Eliminato in Semifinale → **{premio_gironi + premio_semifinale:.2f} FM**")
+st.write(f"- Finalista sconfitto → **{premio_gironi + premio_semifinale + premio_finale:.2f} FM**")
+st.write(f"- Vincitore → **{premio_gironi + premio_semifinale + premio_finale + premio_vittoria:.2f} FM**")
 
 st.info(
-    "Questa operazione sostituisce completamente i premi della competizione selezionata "
-    "nella tabella premi_competizioni."
+    "Questa operazione sostituisce completamente i premi della competizione selezionata."
 )
 
 confirm = st.checkbox("Confermo di voler sostituire i premi di questa competizione")
 
 if st.button("💾 Applica correzione", type="primary", disabled=not confirm):
     ops = [
-        (
-            "DELETE FROM premi_competizioni WHERE CompetizioneID = :cid",
-            {"cid": selected_id}
-        ),
+        ("DELETE FROM premi_competizioni WHERE CompetizioneID = :cid", {"cid": selected_id}),
         (
             """
             INSERT INTO premi_competizioni (CompetizioneID, Fase, Premio, Ordine)
@@ -107,6 +126,13 @@ if st.button("💾 Applica correzione", type="primary", disabled=not confirm):
             VALUES (:cid, :fase, :premio, :ordine)
             """,
             {"cid": selected_id, "fase": "Finale", "premio": premio_finale, "ordine": 3}
+        ),
+        (
+            """
+            INSERT INTO premi_competizioni (CompetizioneID, Fase, Premio, Ordine)
+            VALUES (:cid, :fase, :premio, :ordine)
+            """,
+            {"cid": selected_id, "fase": "Vittoria", "premio": premio_vittoria, "ordine": 4}
         ),
     ]
 
