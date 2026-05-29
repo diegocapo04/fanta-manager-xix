@@ -32,79 +32,168 @@ st.title(f"⚽ Gestione Gare & Calendario ({current_season})")
 # ======================================================================
 
 def parse_calendar_excel(df):
-    raw_name         = str(df.iloc[0, 0]).strip()
+    raw_name = str(df.iloc[0, 0]).strip()
     competition_name = raw_name.replace("Calendario ", "").strip()
-
-    has_groups = any(
-        isinstance(df.iloc[r, 0], str) and df.iloc[r, 0].strip() in ["A", "B", "C", "D"]
-        for r in range(len(df))
-    )
 
     matches = []
 
+    def norm_text(x):
+        if pd.isna(x):
+            return ""
+        return str(x).strip()
+
     def parse_score(s):
-        if pd.isna(s): return None, None
+        if pd.isna(s):
+            return None, None
+        s = str(s).strip()
+        if s == "-" or s == "":
+            return None, None
         try:
-            p = str(s).split("-")
+            p = s.split("-")
             if len(p) == 2:
                 return int(float(p[0])), int(float(p[1]))
-        except: pass
+        except:
+            pass
         return None, None
 
     def get_matchday(text):
-        if pd.isna(text): return None
+        if pd.isna(text):
+            return None
         m = re.search(r"(\d+)", str(text))
         return int(m.group(1)) if m else None
+
+    def detect_phase_label(text):
+        t = norm_text(text).lower()
+
+        phase_map = {
+            "ottavi": "Ottavi",
+            "quarti": "Quarti",
+            "semifinali": "Semifinale",
+            "semifinale": "Semifinale",
+            "finale": "Finale",
+            "gironi": "Gironi",
+            "fase a gironi": "Gironi",
+            "league phase": "Gironi",
+        }
+
+        for key, value in phase_map.items():
+            if key in t:
+                return value
+        return None
+
+    def is_group_letter(val):
+        return norm_text(val) in ["A", "B", "C", "D"]
+
+    has_groups = any(
+        is_group_letter(df.iloc[r, 0]) or is_group_letter(df.iloc[r, 7] if df.shape[1] > 7 else None)
+        for r in range(len(df))
+    )
+
+    current_phase = "Gironi"
 
     if not has_groups:
         row = 0
         while row < len(df):
+            # intercetta eventuali intestazioni di fase
+            row_values = [norm_text(df.iloc[row, c]) for c in range(min(df.shape[1], 13))]
+            detected_phase = None
+            for val in row_values:
+                detected_phase = detect_phase_label(val)
+                if detected_phase:
+                    current_phase = detected_phase
+                    break
+
+            # due blocchi per riga: sinistra e destra
             for block_col, home_c, away_c, score_c in [(0, 0, 3, 4), (6, 6, 9, 10)]:
-                cell = df.iloc[row, block_col] if df.shape[1] > block_col else None
+                if df.shape[1] <= block_col:
+                    continue
+
+                cell = df.iloc[row, block_col]
                 if isinstance(cell, str) and "Giornata lega" in cell:
                     giornata = get_matchday(cell)
+
                     for i in range(1, 6):
-                        if row + i >= len(df): break
-                        home  = df.iloc[row + i, home_c]
-                        away  = df.iloc[row + i, away_c]
-                        score = df.iloc[row + i, score_c]
-                        if pd.notna(home) and pd.notna(away):
-                            gh, ga = parse_score(score)
-                            matches.append({
-                                "Giornata": giornata,
-                                "Casa":     str(home).strip(),
-                                "Ospite":   str(away).strip(),
-                                "GolCasa":  gh,
-                                "GolOspite":ga,
-                                "Giocata":  1 if gh is not None else 0,
-                                "Girone":   None
-                            })
+                        if row + i >= len(df):
+                            break
+
+                        home = df.iloc[row + i, home_c] if df.shape[1] > home_c else None
+                        away = df.iloc[row + i, away_c] if df.shape[1] > away_c else None
+                        score = df.iloc[row + i, score_c] if df.shape[1] > score_c else None
+
+                        home_txt = norm_text(home)
+                        away_txt = norm_text(away)
+
+                        if not home_txt or not away_txt:
+                            continue
+                        if "Riposa" in home_txt or "Riposa" in away_txt:
+                            continue
+                        if home_txt == "-" or away_txt == "-":
+                            continue
+
+                        gh, ga = parse_score(score)
+
+                        matches.append({
+                            "Giornata": giornata,
+                            "Casa": home_txt,
+                            "Ospite": away_txt,
+                            "GolCasa": gh,
+                            "GolOspite": ga,
+                            "Giocata": 1 if gh is not None else 0,
+                            "Girone": None,
+                            "Fase": current_phase
+                        })
             row += 1
+
     else:
         row = 0
         while row < len(df):
+            row_values = [norm_text(df.iloc[row, c]) for c in range(min(df.shape[1], 13))]
+            detected_phase = None
+            for val in row_values:
+                detected_phase = detect_phase_label(val)
+                if detected_phase:
+                    current_phase = detected_phase
+                    break
+
             for g_c, home_c, away_c, score_c in [(0, 1, 4, 5), (7, 8, 11, 12)]:
-                cell = df.iloc[row, g_c] if df.shape[1] > g_c else None
+                if df.shape[1] <= g_c:
+                    continue
+
+                cell = df.iloc[row, g_c]
                 if isinstance(cell, str) and "Giornata lega" in cell:
                     giornata = get_matchday(cell)
+
                     for i in range(1, 7):
-                        if row + i >= len(df): break
-                        girone = df.iloc[row + i, g_c]
-                        home   = df.iloc[row + i, home_c]
-                        away   = df.iloc[row + i, away_c]
-                        score  = df.iloc[row + i, score_c]
-                        if pd.isna(home) or pd.isna(away): continue
-                        if "Riposa" in str(home) or "Riposa" in str(away): continue
-                        if not isinstance(girone, str) or girone.strip() not in ["A","B","C","D"]: continue
+                        if row + i >= len(df):
+                            break
+
+                        girone = df.iloc[row + i, g_c] if df.shape[1] > g_c else None
+                        home = df.iloc[row + i, home_c] if df.shape[1] > home_c else None
+                        away = df.iloc[row + i, away_c] if df.shape[1] > away_c else None
+                        score = df.iloc[row + i, score_c] if df.shape[1] > score_c else None
+
+                        home_txt = norm_text(home)
+                        away_txt = norm_text(away)
+                        girone_txt = norm_text(girone)
+
+                        if not home_txt or not away_txt:
+                            continue
+                        if "Riposa" in home_txt or "Riposa" in away_txt:
+                            continue
+                        if not is_group_letter(girone_txt):
+                            continue
+
                         gh, ga = parse_score(score)
+
                         matches.append({
                             "Giornata": giornata,
-                            "Casa":     str(home).strip(),
-                            "Ospite":   str(away).strip(),
-                            "GolCasa":  gh,
-                            "GolOspite":ga,
-                            "Giocata":  1 if gh is not None else 0,
-                            "Girone":   girone.strip()
+                            "Casa": home_txt,
+                            "Ospite": away_txt,
+                            "GolCasa": gh,
+                            "GolOspite": ga,
+                            "Giocata": 1 if gh is not None else 0,
+                            "Girone": girone_txt,
+                            "Fase": current_phase
                         })
             row += 1
 
@@ -179,17 +268,19 @@ def process_new_matchdays(df_matches, comp_id, season, fase=None):
         money_away, note_a = calculate_earnings(away_id, False, ga, gh)
 
         # INSERT IGNORE evita duplicati grazie alla UNIQUE KEY su partite
+        fase_match = match["Fase"] if "Fase" in df_new.columns and pd.notna(match["Fase"]) else fase
+
         ops.append(("""
             INSERT IGNORE INTO partite
                 (CompetizioneID, Stagione, Giornata, SquadraCasaID, SquadraOspiteID,
-                 GolCasa, GolOspite, Giocata, GuadagnoCasa, GuadagnoOspite, Fase)
+                GolCasa, GolOspite, Giocata, GuadagnoCasa, GuadagnoOspite, Fase)
             VALUES (:c, :s, :g, :h, :a, :gh, :ga, 1, :mh, :ma, :fase)
         """, {
             "c": comp_id, "s": season, "g": giornata,
             "h": home_id, "a": away_id,
-            "gh": gh,     "ga": ga,
+            "gh": gh, "ga": ga,
             "mh": money_home, "ma": money_away,
-            "fase": fase
+            "fase": fase_match
         }))
 
         ops.append((
@@ -319,11 +410,16 @@ with tab_upload:
                 # Selezione Fase per competizioni di tipo Coppa
                 fase_upload = None
                 if comp_tipo == "Coppa":
-                    fase_options = ["Gironi", "Ottavi", "Quarti", "Semifinale", "Finale"]
-                    fase_upload = st.selectbox(
-                        "Fase da importare", fase_options, key="fase_upload",
-                        help="Seleziona la fase a cui appartengono le giornate del file"
-                    )
+                    if "Fase" in df_parsed.columns and df_parsed["Fase"].notna().any():
+                        fasi_rilevate = [f for f in df_parsed["Fase"].dropna().unique().tolist() if f]
+                        st.success(f"Fasi rilevate automaticamente dal file: {', '.join(fasi_rilevate)}")
+                        fase_upload = None
+                    else:
+                        fase_options = ["Gironi", "Ottavi", "Quarti", "Semifinale", "Finale"]
+                        fase_upload = st.selectbox(
+                            "Fase da importare", fase_options, key="fase_upload",
+                            help="Usata solo se il parser non rileva automaticamente la fase"
+                        )
 
                 res_last = run_query(
                     "SELECT COALESCE(MAX(Giornata), 0) FROM partite "
