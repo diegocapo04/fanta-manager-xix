@@ -64,28 +64,3 @@ with col3:
         if res_g: n_gioc = res_g[0][0]
     except: pass
     st.metric(label="Giocatori in DB", value=n_gioc)
-
-# --- 6. MENU DI NAVIGAZIONE RAPIDA ---
-st.divider()
-st.subheader("🚀 Accesso Rapido")
-
-col_nav1, col_nav2 = st.columns(2)
-
-with col_nav1:
-    st.info("**Area Utente**")
-    st.markdown("""
-    - 📋 **[Rose](Rose)**: Visualizza le rose complete
-    - ℹ️ **[Info Squadra](Info_Squadra)**: Dettagli club, stadi e finanze
-    - 💰 **[Osservatorio Mercato](Osservatorio_Mercato)**: Storico movimenti
-    - 📈 **[Statistiche & Classifica](Classifica)**: Andamento campionato
-    """)
-
-if is_admin():
-    with col_nav2:
-        st.error("**Area Amministrazione**")
-        st.markdown("""
-        - ⚖️ **[Gestione Mercato](Mercato)**: Compravendita e Rinnovi
-        - ⚽ **[Gestione Gare](Admin_Gare)**: Inserimento risultati e calendario
-        - 🏟️ **[Admin Squadre](Admin_Squadre)**: Modifica Stadi e Budget
-        - 🏁 **[Fine Stagione](Fine_Stagione)**: Chiusura anno
-        """)

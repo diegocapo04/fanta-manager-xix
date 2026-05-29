@@ -228,6 +228,8 @@ def get_teams_map():
     return {row[1]: row[0] for row in res} if res else {}
 
 def get_matches(season, played=False, competition_id=None):
+    if isinstance(competition_id, dict):
+        competition_id = competition_id.get("id")
     status = 1 if played else 0
     q = """
     SELECT p.ID, p.Giornata, fc.Nome, fo.Nome, p.GolCasa, p.GolOspite,
@@ -444,7 +446,7 @@ with tab_hist:
     sel_comp_h = st.selectbox(
         "Filtra per competizione", ["Tutte"] + list(comps_map.keys()), key="hist_comp"
     )
-    cid_h = comps_map[sel_comp_h] if sel_comp_h != "Tutte" else None
+    cid_h = comps_map[sel_comp_h]["id"] if sel_comp_h != "Tutte" else None
 
     played = get_matches(current_season, played=True, competition_id=cid_h)
     if played:
