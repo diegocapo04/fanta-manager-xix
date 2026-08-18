@@ -136,38 +136,143 @@ with t_anag:
 
     with sub_edit:
         all_pl = get_all_players()
+
+        def get_contract_full(giocatore_id):
+            """Recupera il contratto completo (se esiste) per un giocatore, con tutti i campi."""
+            res = run_query("""
+                SELECT c.ID, c.SquadraID, fs.Nome, c.Stipendio, c.CostoAcquisto,
+                    c.AnniDurata, c.StagioneFirma, c.PrimaSquadra, c.SettoreGiovanile
+                FROM contratti c
+                JOIN fantasquadre fs ON c.SquadraID = fs.ID
+                WHERE c.GiocatoreID = :gid
+            """, {"gid": giocatore_id})
+            if not res:
+                return None
+            r = res[0]
+            return {
+                "contratto_id": r[0], "squadra_id": r[1], "squadra_nome": r[2],
+                "stipendio": float(r[3] or 0.0), "costo_acquisto": float(r[4] or 0.0),
+                "anni": int(r[5]), "stagione_firma": r[6],
+                "prima_squadra": bool(r[7]), "settore_giovanile": bool(r[8]),
+            }
+
         if all_pl:
-            sel_p  = st.selectbox("Seleziona Giocatore", list(all_pl.keys()))
+            sel_p  = st.selectbox("Seleziona Giocatore", list(all_pl.keys()), key="sel_edit_player")
             data_p = all_pl[sel_p]
-            with st.form("edit_player"):
+            contratto = get_contract_full(data_p["id"])
+
+            st.divider()
+            st.markdown("##### 👤 Dati Anagrafici")
+
+            with st.form("edit_player_full"):
                 c1, c2 = st.columns(2)
                 new_n = c1.text_input("Nome",    data_p["n"])
                 new_c = c2.text_input("Cognome", data_p["c"])
-                new_r = c1.selectbox("Ruolo", ["P","D","C","A"],
-                                     index=["P","D","C","A"].index(data_p["r"]))
-                new_v = c2.number_input("Valore Mercato (FM)", min_value=0.01,
+                new_r = c1.selectbox("Ruolo", ["P", "D", "C", "A"],
+                                    index=["P", "D", "C", "A"].index(data_p["r"]))
+                new_v = c2.number_input("Valore Mercato (FM)", min_value=1.0,
                                         step=0.5, value=data_p["v"])
 
+                st.divider()
+                st.markdown("##### 📄 Situazione Contrattuale")
+
+                team_names = list(teams_map.keys())
+
+                if contratto:
+                    st.caption(
+                        f"Attualmente sotto contratto con **{contratto['squadra_nome']}** "
+                        f"(firmato stagione {contratto['stagione_firma']})"
+                    )
+                    default_idx = team_names.index(contratto["squadra_nome"]) if contratto["squadra_nome"] in team_names else 0
+
+                    cc1, cc2 = st.columns(2)
+                    new_team = cc1.selectbox("Squadra", team_names, index=default_idx, key="edit_team_sel")
+                    new_stagione_firma = cc2.text_input("Stagione Firma", contratto["stagione_firma"])
+
+                    cc3, cc4 = st.columns(2)
+                    new_stipendio = cc3.number_input("Stipendio (FM)", min_value=0.0, step=0.5,
+                                                    value=contratto["stipendio"])
+                    new_costo = cc4.number_input("Costo Acquisto (FM)", min_value=0.0, step=0.5,
+                                                value=contratto["costo_acquisto"])
+
+                    cc5, cc6 = st.columns(2)
+                    new_anni = cc5.number_input("Anni Durata Contratto", min_value=1, max_value=5,
+                                                value=contratto["anni"])
+                    new_settore = cc6.checkbox("Settore Giovanile", value=contratto["settore_giovanile"])
+
+                    new_prima_squadra = st.checkbox("Prima Squadra", value=contratto["prima_squadra"])
+                    svincola_flag = st.checkbox("🚫 Svincola il giocatore (rimuove il contratto)", value=False)
+                else:
+                    st.info("Giocatore attualmente **svincolato** — nessun contratto attivo.")
+                    assegna_flag = st.checkbox("➕ Assegna a una squadra (crea nuovo contratto)", value=False)
+                    new_team = None
+                    if assegna_flag:
+                        cc1, cc2 = st.columns(2)
+                        new_team = cc1.selectbox("Squadra", team_names, key="edit_team_new")
+                        new_stagione_firma = cc2.text_input("Stagione Firma", current_season)
+
+                        cc3, cc4 = st.columns(2)
+                        new_stipendio = cc3.number_input("Stipendio (FM)", min_value=0.0, step=0.5, value=1.0)
+                        new_costo = cc4.number_input("Costo Acquisto (FM)", min_value=0.0, step=0.5, value=0.0)
+
+                        cc5, cc6 = st.columns(2)
+                        new_anni = cc5.number_input("Anni Durata Contratto", min_value=1, max_value=5, value=3)
+                        new_settore = cc6.checkbox("Settore Giovanile", value=False)
+
+                        new_prima_squadra = st.checkbox("Prima Squadra", value=True)
+
+                st.divider()
                 cs, cd = st.columns(2)
-                do_save = cs.form_submit_button("💾 Aggiorna", type="primary")
-                do_del  = cd.form_submit_button("🗑️ Elimina dal DB")
+                do_save = cs.form_submit_button("💾 Salva Tutte le Modifiche", type="primary")
+                do_del  = cd.form_submit_button("🗑️ Elimina Giocatore dal DB")
 
                 if do_save:
-                    run_query(
-                        "UPDATE giocatori SET Nome=:n, Cognome=:c, Ruolo=:r, "
+                    ops = [
+                        ("UPDATE giocatori SET Nome=:n, Cognome=:c, Ruolo=:r, "
                         "ValoreMercato=:v WHERE ID=:id",
-                        {"n": new_n, "c": new_c, "r": new_r, "v": new_v, "id": data_p["id"]}
-                    )
-                    st.success("✅ Aggiornato!")
-                    st.rerun()
+                        {"n": new_n, "c": new_c, "r": new_r, "v": new_v, "id": data_p["id"]})
+                    ]
+
+                    if contratto:
+                        if svincola_flag:
+                            ops.append((
+                                "DELETE FROM contratti WHERE ID=:cid",
+                                {"cid": contratto["contratto_id"]}
+                            ))
+                        else:
+                            new_team_id = teams_map[new_team]
+                            ops.append((
+                                "UPDATE contratti SET SquadraID=:t, Stipendio=:s, CostoAcquisto=:co, "
+                                "AnniDurata=:a, StagioneFirma=:stag, PrimaSquadra=:ps, "
+                                "SettoreGiovanile=:sg WHERE ID=:cid",
+                                {
+                                    "t": new_team_id, "s": new_stipendio, "co": new_costo,
+                                    "a": new_anni, "stag": new_stagione_firma,
+                                    "ps": int(new_prima_squadra), "sg": int(new_settore),
+                                    "cid": contratto["contratto_id"],
+                                }
+                            ))
+                    elif not contratto and new_team is not None:
+                        new_team_id = teams_map[new_team]
+                        ops.append((
+                            "INSERT INTO contratti (SquadraID, GiocatoreID, Stipendio, CostoAcquisto, "
+                            "AnniDurata, StagioneFirma, PrimaSquadra, SettoreGiovanile) "
+                            "VALUES (:t,:p,:s,:co,:a,:stag,:ps,:sg)",
+                            {
+                                "t": new_team_id, "p": data_p["id"], "s": new_stipendio,
+                                "co": new_costo, "a": new_anni, "stag": new_stagione_firma,
+                                "ps": int(new_prima_squadra), "sg": int(new_settore),
+                            }
+                        ))
+
+                    if run_transaction_batch(ops):
+                        st.success("✅ Modifiche salvate con successo!")
+                        st.rerun()
 
                 if do_del:
-                    has_contract = run_query(
-                        "SELECT 1 FROM contratti WHERE GiocatoreID=:id LIMIT 1",
-                        {"id": data_p["id"]}
-                    )
-                    if has_contract:
-                        st.error("⛔ Contratto attivo: svincola prima il giocatore.")
+                    if contratto:
+                        st.error("⛔ Contratto attivo: svincola prima il giocatore (spunta la casella sopra e salva), poi elimina.")
+
                     else:
                         run_query("DELETE FROM giocatori WHERE ID=:id", {"id": data_p["id"]})
                         st.success(f"🗑️ Eliminato: {sel_p}")
